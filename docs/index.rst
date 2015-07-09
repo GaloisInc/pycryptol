@@ -12,7 +12,6 @@ Contents:
    :maxdepth: 2
 
    cryptol
-   modules
 
 Indices and tables
 ==================

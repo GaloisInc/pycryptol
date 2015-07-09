@@ -12,6 +12,10 @@ cryptol.cryptol module
     :undoc-members:
     :show-inheritance:
 
+.. autoclass:: cryptol.cryptol._CryptolModule
+    :members:
+    :undoc-members:
+    :show-inheritance:
 
 Module contents
 ---------------
