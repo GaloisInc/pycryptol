@@ -1,10 +1,7 @@
 cryptol package
 ===============
 
-Submodules
-----------
-
-cryptol.cryptol module
+cryptol module
 ----------------------
 
 .. automodule:: cryptol.cryptol
@@ -13,14 +10,6 @@ cryptol.cryptol module
     :show-inheritance:
 
 .. autoclass:: cryptol.cryptol._CryptolModule
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: cryptol
     :members:
     :undoc-members:
     :show-inheritance:
