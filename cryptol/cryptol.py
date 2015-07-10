@@ -153,6 +153,12 @@ class _CryptolModule(object):
             if (hasattr(val, '__name__') and
                     re.match(_CryptolModule.__identifier, decl) is not None):
                 val.__name__ = decl.encode('utf-8')
+            # set the docstring if available and settable
+            if 'ifDeclDoc' in tl_decls[decl][0]:
+                try:
+                    val.__doc__ = tl_decls[decl][0]['ifDeclDoc'].encode('utf-8')
+                except AttributeError:
+                    pass
             # assign it to the object under construction; this
             # uses setattr so that the name used is dynamic
             setattr(self.__class__, decl, val)
@@ -167,7 +173,7 @@ class _CryptolModule(object):
         """
         self.__req.send_json({'tag': 'loadModule', 'filePath': filepath})
         load_resp = self.__req.recv_json()
-        if load_resp['tag'] is not 'ok':
+        if load_resp['tag'] != 'ok':
             raise CryptolError(load_resp)
 
     def __enter__(self):
@@ -302,19 +308,37 @@ class _CryptolModule(object):
         elif val['tag'] == 'funValue':
             return self.__from_funvalue(val['handle'])
         elif val['tag'] == 'interactiveError':
-            raise CryptolError(val['error'])
+            raise CryptolError(val['pp'])
         else:
             raise ValueError(
                 'Cryptol evaluation returned a non-value '
                 'message: %s' % val)
 
     def typeof(self, expr):
-        """Get the type of a Cryptol expression."""
-        # TODO: return pretty-printed version for now
-        #
+        """Get the type of a Cryptol expression.
+
+        :param str expr: The expression to typecheck
+
+        :return str: The pretty-printed representation of the type
+
+        :raises CryptolError: if an error occurs during Cryptol
+            parsing or typechecking
+
+        :raises ValueError: if an unexpected message is returned from
+            the Cryptol server
+
+        """
         # TODO: design Python representation of Cryptol types for a
         # semantically-meaningful return value
-        return self.__tag_expr('typeOf', expr)
+        resp = self.__tag_expr('typeOf', expr)
+        if resp['tag'] == 'type':
+            return resp['pp']
+        elif resp['tag'] == 'interactiveError':
+            raise CryptolError(resp['pp'])
+        else:
+            raise ValueError(
+                'Cryptol typechecking returned a non-type '
+                'message: %s' % resp)
 
     def check(self, expr):
         """Randomly test a Cryptol property."""
