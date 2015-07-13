@@ -351,14 +351,79 @@ class _CryptolModule(object):
         return self.__tag_expr('exhaust', expr)
 
     def prove(self, expr):
-        """Prove a Cryptol property."""
-        # TODO: return counterexample value
-        return self.__tag_expr('prove', expr)
+        """Prove validity of a Cryptol property.
+
+        Invokes the current prover on a property, attempting to find
+        prove the validity of the property and returning a
+        counterexample if the property is invalid.
+
+        :param str expr: The property to satisfy
+
+        :return: `None` if the property is valid, or a tuple of Python
+            values if a counterexample is found
+
+        :raises ProverError: if an error occurs during prover invocation
+
+        :raises CryptolError: if an error occurs during Cryptol
+            parsing, typechecking, evaluation, or symbolic simulation
+
+        :raises ValueError: if an unexpected message is returned from
+            the Cryptol server
+
+        """
+        # TODO: returning `None` is really ugly; should have some sort
+        # of solverresult api
+        resp = self.__tag_expr('prove', expr)
+        if resp['tag'] == 'prove':
+            if resp['counterexample'] is not None:
+                return tuple([self.__from_value(arg)
+                              for arg in resp['counterexample']])
+            else:
+                return None
+        elif resp['tag'] == 'proverError':
+            raise ProverError(resp['message'])
+        elif resp['tag'] == 'interactiveError':
+            raise CryptolError(resp['pp'])
+        else:
+            raise ValueError(
+                'Cryptol prove command returned an invalid '
+                'message: %s' % resp)
 
     def sat(self, expr):
-        """Find a satisfying assignment for a Cryptol property."""
-        # TODO: return satisfying assignment value
-        return self.__tag_expr('sat', expr)
+        """Find satisfying assignments for a Cryptol property.
+
+        Invokes the current prover on a property, attempting to find
+        satisfying assignments for the property. The number of
+        assignments is, at most, the value of the ``satNum``
+        interpreter option.
+
+        :param str expr: The property to satisfy
+
+        :return: A list containing the satisfying assignments as
+            tuples of Python values
+
+        :raises ProverError: if an error occurs during prover invocation
+
+        :raises CryptolError: if an error occurs during Cryptol
+            parsing, typechecking, evaluation, or symbolic simulation
+
+        :raises ValueError: if an unexpected message is returned from
+            the Cryptol server
+
+        """
+        # TODO: disambiguate sat with no arguments from unsat
+        resp = self.__tag_expr('sat', expr)
+        if resp['tag'] == 'sat':
+            return [tuple([self.__from_value(arg) for arg in assignment])
+                    for assignment in resp['assignments']]
+        elif resp['tag'] == 'proverError':
+            raise ProverError(resp['message'])
+        elif resp['tag'] == 'interactiveError':
+            raise CryptolError(resp['pp'])
+        else:
+            raise ValueError(
+                'Cryptol SAT checking returned an invalid '
+                'message: %s' % resp)
 
     def setopt(self, option, value):
         """Set an option in the Cryptol session for this module.
@@ -397,6 +462,10 @@ class CryptolError(Exception):
     """Base class for all errors arising from Cryptol"""
     # TODO: add a class hierarchy to break down the different types of
     # Cryptol errors
+    pass
+
+class ProverError(CryptolError):
+    """An error arising from the prover configured for Cryptol"""
     pass
 
 
