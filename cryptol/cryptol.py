@@ -4,18 +4,37 @@
 
 from BitVector import BitVector
 import atexit
+import enum
 import os
 import re
 import subprocess
 import weakref
 import zmq
 
+class Provers(enum.Enum):
+    """Available provers for Cryptol"""
+
+    ANY = 'any'
+    """Use all available provers, returning the first answer"""
+    ABC = 'abc'
+    """Use `ABC <http://www.eecs.berkeley.edu/~alanmi/abc/>`_"""
+    BOOLECTOR = 'boolector'
+    """Use `Boolector <http://fmv.jku.at/boolector/>`_"""
+    CVC4 = 'cvc4'
+    """Use `CVC4 <http://cvc4.cs.nyu.edu/web/>`_"""
+    MATHSAT = 'mathsat'
+    """Use `MathSAT <http://mathsat.fbk.eu/>`_"""
+    YICES = 'yices'
+    """Use `Yices <http://yices.csl.sri.com/>`_"""
+    Z3 = 'z3'
+    """Use `Z3 <https://github.com/Z3Prover/z3>`_"""
+
 class Cryptol(object):
     """A Cryptol interpreter session.
 
     Instances of this class are sessions with the Cryptol server. The
-    main way to use one of these instances is to call :meth:`load_module`
-    or :meth:`prelude`.
+    main way to use one of these instances is to call
+    :meth:`.load_module` or :meth:`.prelude`.
 
     :param str cryptol_server: The path to the Cryptol server executable
 
@@ -115,8 +134,8 @@ class _CryptolModule(object):
     .. note:: Users of this module should not instantiate this class
         directly.
 
-    This class is the basis for the object returned by
-    :meth:`load_module`.
+    This class is the basis for the objects returned by
+    :meth:`.load_module` and :meth:`.prelude`.
 
     :param Socket req: The request socket for this module context
 
@@ -127,6 +146,11 @@ class _CryptolModule(object):
     __identifier = re.compile(r"^[a-zA-Z_]\w*\Z")
 
     def __init__(self, req, filepath=None):
+        self.__ascii = False
+        self.__base = 16
+        self.__ite_solver = False
+        self.__mono_binds = True
+        self.__prover = Provers.CVC4
         self.__req = req
         if filepath is not None:
             self.__load_module(filepath)
@@ -135,7 +159,7 @@ class _CryptolModule(object):
         tl_decls = browse_resp['decls']['ifDecls']
         for decl in tl_decls:
             # TODO: handle infix operators. Right now they can be
-            # accessed by strings through :meth:`eval`, but since new
+            # accessed by strings through :meth:`.eval`, but since new
             # infix operators can't be defined in Python, we can't add
             # them to the returned object
             is_infix = tl_decls[decl][0]['ifDeclInfix']
@@ -237,7 +261,7 @@ class _CryptolModule(object):
     def __from_funvalue(self, handle):
         """Convert a JSON-formatted Cryptol closure to a Python function.
 
-        This is separated out from :meth:`__from_value` since the
+        This is separated out from :meth:`.__from_value` since the
         Cryptol server tags closure messages differently from regular
         values.
 
@@ -260,7 +284,7 @@ class _CryptolModule(object):
         return clos
 
     def __to_value(self, pyval):
-        """Convert a Python value to a JSON-formatted Cryptol value"""
+        """Convert a Python value to a JSON-formatted Cryptol value."""
         # VBit
         if isinstance(pyval, bool):
             return {'bit': pyval}
@@ -283,6 +307,7 @@ class _CryptolModule(object):
                     {'bitvector':
                      {'width': pyval.length(), 'value': int(pyval)}}}
         else:
+            # TODO: convert strings to ASCII?
             raise ValueError(
                 'Unable to convert Python value into '
                 'Cryptol value %s' % str(pyval))
@@ -350,12 +375,8 @@ class _CryptolModule(object):
         # TODO: return counterexample value
         return self.__tag_expr('exhaust', expr)
 
-    def prove(self, expr):
-        """Prove validity of a Cryptol property.
-
-        Invokes the current prover on a property, attempting to find
-        prove the validity of the property and returning a
-        counterexample if the property is invalid.
+    def prove(self, expr, prover=Provers.CVC4, ite_solver=False):
+        """Prove validity of a Cryptol property, or find a counterexample.
 
         :param str expr: The property to satisfy
 
@@ -373,6 +394,11 @@ class _CryptolModule(object):
         """
         # TODO: returning `None` is really ugly; should have some sort
         # of solverresult api
+
+        # set keywords
+        self.setopt('prover', prover.value)
+        self.setopt('iteSolver', _bool_to_opt(ite_solver))
+
         resp = self.__tag_expr('prove', expr)
         if resp['tag'] == 'prove':
             if resp['counterexample'] is not None:
@@ -389,15 +415,19 @@ class _CryptolModule(object):
                 'Cryptol prove command returned an invalid '
                 'message: %s' % resp)
 
-    def sat(self, expr):
+    def sat(self, expr, sat_num=1, prover=Provers.CVC4, ite_solver=False):
         """Find satisfying assignments for a Cryptol property.
 
-        Invokes the current prover on a property, attempting to find
-        satisfying assignments for the property. The number of
-        assignments is, at most, the value of the ``satNum``
-        interpreter option.
-
         :param str expr: The property to satisfy
+
+        :param int sat_num: The maximum number of satisfying
+            assignments to return; use `None` for no maximum
+
+        :param Provers prover: The prover to use
+
+        :param bool ite_solver: Whether to use the solver during
+            symbolic execution; can prevent non-termination at the
+            cost of performance
 
         :return: A list containing the satisfying assignments as
             tuples of Python values
@@ -412,6 +442,15 @@ class _CryptolModule(object):
 
         """
         # TODO: disambiguate sat with no arguments from unsat
+
+        # set keywords
+        if sat_num is None:
+            self.setopt('satNum', 'all')
+        else:
+            self.setopt('satNum', str(sat_num))
+        self.setopt('prover', prover.value)
+        self.setopt('iteSolver', _bool_to_opt(ite_solver))
+
         resp = self.__tag_expr('sat', expr)
         if resp['tag'] == 'sat':
             return [tuple([self.__from_value(arg) for arg in assignment])
@@ -427,6 +466,11 @@ class _CryptolModule(object):
 
     def setopt(self, option, value):
         """Set an option in the Cryptol session for this module.
+
+        .. note:: This method is going away in the near future, but is
+            here for completeness at the moment. Values set here may
+            be overwritten by calls to :meth:`.prove` and
+            :meth:`.sat`, among others.
 
         :param str option: The option to set
 
@@ -457,7 +501,6 @@ class _CryptolModule(object):
             self.__req.recv_json()
             self.__req.close()
 
-
 class CryptolError(Exception):
     """Base class for all errors arising from Cryptol"""
     # TODO: add a class hierarchy to break down the different types of
@@ -468,6 +511,12 @@ class ProverError(CryptolError):
     """An error arising from the prover configured for Cryptol"""
     pass
 
+def _bool_to_opt(boolean):
+    """Convert a boolean to ``on`` or ``off``"""
+    if boolean:
+        return 'on'
+    else:
+        return 'off'
 
 def _is_function(sch):
     """Is a JSON Schema a function type?"""
