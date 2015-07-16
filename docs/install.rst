@@ -15,15 +15,16 @@ To use pycryptol, both the `pycryptol
 <https://github.com/GaloisInc/pycryptol>`_ Python library and the
 ``cryptol-server`` Haskell executable must be installed. This guide
 assumes that you already have Python and `pip <https://pip.pypa.io/>`_
-installed, and that you have a Haskell toolchain capable of building
-`Cryptol <https://github.com/GaloisInc/cryptol>`_.
+installed, and that you have a Haskell toolchain with GHC 7.10.1 or
+newer capable of building `Cryptol
+<https://github.com/GaloisInc/cryptol>`_.
 
 Installing the Python Library
 -----------------------------
 
 The Python library is most easily installed using pip::
 
-  pip install git+ssh://git@github.com/GaloisInc/pycryptol.git \
+  pip install git+https://github.com/GaloisInc/pycryptol.git \
       --allow-external BitVector \
       --allow-unverified BitVector
 
@@ -43,8 +44,9 @@ the ZeroMQ library. For more, see the `pyzmq documentation
 Installing the Cryptol Server
 -----------------------------
 
-This guide assumes that you are already able to build Cryptol from a
-GitHub checkout; see the `Cryptol documentation
+This guide assumes that you are already have GHC 7.10.1 or newer, and
+are able to build Cryptol from a GitHub checkout; see the `Cryptol
+documentation
 <https://github.com/GaloisInc/cryptol/blob/master/README.md#building-cryptol-from-source>`_
 for instructions.
 
