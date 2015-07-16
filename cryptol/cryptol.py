@@ -256,6 +256,11 @@ class _CryptolModule(object):
                 return None
             else:
                 return BitVector(intVal=intval % (2**width), size=width)
+        # VFun TODO: this only arises when functions are nested within
+        # other structures. Make the server handle this case with a
+        # funvalue message
+        if 'function' in val:
+            return None
         raise ValueError('Could not convert message to value: %s' % val)
 
     def __from_funvalue(self, handle):
@@ -501,6 +506,34 @@ class _CryptolModule(object):
             self.__req.recv_json()
             self.__req.close()
 
+    @staticmethod
+    def to_expr(pyval):
+        """Convert a Python value to a Cryptol expression"""
+        # VBit
+        if isinstance(pyval, bool):
+            return str(pyval)
+        # VRecord
+        elif isinstance(pyval, dict):
+            fields = ['%s = %s' % (k, _CryptolModule.to_expr(v))
+                      for k, v in pyval.items()]
+            return '{%s}' % ', '.join(fields)
+        # VTuple
+        elif isinstance(pyval, tuple):
+            elts = [_CryptolModule.to_expr(v) for v in pyval]
+            return '(%s)' % ', '.join(elts)
+        # VSeq
+        elif isinstance(pyval, list):
+            elts = [_CryptolModule.to_expr(v) for v in pyval]
+            return '[%s]' % ', '.join(elts)
+        # VWord
+        elif isinstance(pyval, BitVector):
+            return '%d : [%d]' % (int(pyval), pyval.length())
+        else:
+            # TODO: convert strings to ASCII?
+            raise ValueError(
+                'Unable to convert Python value into '
+                'Cryptol expression: %s' % str(pyval))
+
 class CryptolError(Exception):
     """Base class for all errors arising from Cryptol"""
     # TODO: add a class hierarchy to break down the different types of
@@ -526,3 +559,4 @@ def _is_function(sch):
     except (IndexError, KeyError):
         pass
     return ans
+    

@@ -1,0 +1,98 @@
+module CRC32 where
+
+//******* State Machine *******//
+
+type maxinsn = 5
+type lginsn = 3
+
+instructions = [ insn | (_, insn) <- instruction_set ]
+
+step_program : ([lginsn], state) -> state
+step_program(insn, curr_state) = if insn <= `(maxinsn - 1)
+                                 then (instructions @ insn) curr_state
+                                 else zero
+
+// runs a generic program
+run_program : {b} (fin b, b>=1) => ([b][lginsn], state) -> state
+run_program(program, initial_state) = program_states!0
+  where program_states = [initial_state] #
+                         [ step_program(insn, curr_state)
+                         | insn <- program
+                         | curr_state <- program_states
+                         ]
+
+//******* Program Correctness *******//
+
+compute_program : {a, b} (fin a,a >= 1, fin b, b>=1) =>
+                        ([b][lginsn], (state, state) -> Bit, [a]state) -> Bit
+compute_program(program, oracle, tests) =
+  [ oracle(test, result) | test <- tests | result <- results ]==(~zero)
+  where results = [ run_program(program, test) | test <- tests ]
+
+program_is_correct : {b} (fin b, b>=1) =>
+                         ([b][lginsn], (state, state) -> Bit, state) -> Bit
+program_is_correct(program, oracle, init_state) =
+  oracle(init_state, result_state)
+  where result_state = run_program(program, init_state)
+
+
+//******* Utility for Printing Programs *******//
+
+type desc = [40][8]
+descriptions = [ description | (description, _) <- instruction_set ]
+
+printProgram : {b} (fin b, b>=1) => ([b][lginsn]) -> [b][40][8]
+printProgram(program) =
+  [ if insn <= `(maxinsn - 1) then descriptions @insn else "nop" # spaces
+  | insn <- program ]
+
+spaces = take spcs
+  where spcs = [' '] # spcs
+
+//******* Machine Model *******//
+
+type state = ([32], [32], [32], [32])
+
+instruction_set : [5](desc, (state -> state))
+instruction_set =
+  [
+("R1=reverse R1" # spaces,
+    (\(R1, R2, R3, R4) -> (reverse R1, R2, R3, R4))),
+("R1=R1<<1" # spaces,
+    (\(R1, R2, R3, R4) -> (R1 << 1, R2, R3, R4))),
+("R1=R1<<24" # spaces,
+    (\(R1, R2, R3, R4) -> (R1 << 24, R2, R3, R4))),
+("R2=R1 & 0x80000000" # spaces,
+    (\(R1, R2, R3, R4) -> (R1, R1 && 0x80000000, R3, R4))),
+("if(R2<0) then R1 = R1^poly else R1" # spaces,
+    (\(R1, R2, R3, R4) -> ((R1', R2, R3, R4) where R1' = if R2 @ 0 then R1^poly else R1)))
+  ]
+
+
+//******* CRC-32 Table Specification *******//
+
+poly = 0x04c11db7:[32]
+
+subtable i = inner ! 0
+  where inner = [i] # [ if in @ 0 then in << 1 ^ poly else in << 1
+                      | in <- inner
+                      | j <- [0..7]
+                      ]
+
+CRC32_table : [256][32]
+CRC32_table = [ reverse (subtable ((zero # reverse i) << 24)) | i <- ([0..255] : [256][8]) ]
+
+//******* CRC-32 Program Oracle *******//
+
+CRC32_oracle : (state, state) -> Bit
+CRC32_oracle((R1, _, _, _), (R1', _, _, _)) = correct
+  where correct = if(R1 <= 255) then ((CRC32_table@(drop R1 : [8])) == R1') else True
+
+bug : [32] -> Bit
+bug x = zero @ x //if R1 <= 255 then (zero @ R1) @ 0 else True
+
+CRC32_to_state : [32] -> state
+CRC32_to_state(a) = (a, 0, 0, 0)
+
+CRC32_QBF : ([25][lginsn], [32]) -> Bit
+CRC32_QBF(program, a) = program_is_correct(program, CRC32_oracle, CRC32_to_state(a))
