@@ -19,6 +19,16 @@ installed, and that you have a Haskell toolchain with GHC 7.10.1 or
 newer capable of building `Cryptol
 <https://github.com/GaloisInc/cryptol>`_.
 
+Installing ZeroMQ Development Libraries
+---------------------------------------
+
+The Python library and the Cryptol server both require the development
+libraries for ZeroMQ version 4 or higher. Your OS or package manager
+(such as Homebrew or ``apt-get``) should have a ZeroMQ package, but if
+the version is too old, see the `ZeroMQ site
+<http://zeromq.org/intro:get-the-software>`_ for more on how to
+download and install the correct library.
+
 Installing the Python Library
 -----------------------------
 
@@ -34,12 +44,6 @@ The Python library is most easily installed using pip::
    <https://engineering.purdue.edu/kak/dist/BitVector-3.4.3.html>`_
    library used in pycryptol is hosted outside the usual PyPI
    repository, and so requires extra flags when installing.
-
-On OS X and Windows, the ``pyzmq`` dependency should build and install
-automatically. If the installation produces errors related to
-``pyzmq``, though, you may need to install the developer versions of
-the ZeroMQ library. For more, see the `pyzmq documentation
-<https://github.com/zeromq/pyzmq/blob/master/README.md#building-and-installation>`_.
 
 Installing the Cryptol Server
 -----------------------------
