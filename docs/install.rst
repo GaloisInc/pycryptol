@@ -15,7 +15,7 @@ To use pycryptol, both the `pycryptol
 <https://github.com/GaloisInc/pycryptol>`_ Python library and the
 ``cryptol-server`` Haskell executable must be installed. This guide
 assumes that you already have Python and `pip <https://pip.pypa.io/>`_
-installed, and that you have a Haskell toolchain with GHC 7.10.1 or
+installed, and that you have a Haskell toolchain with GHC 7.8.4 or
 newer capable of building `Cryptol
 <https://github.com/GaloisInc/cryptol>`_.
 
@@ -35,37 +35,34 @@ Installing the Python Library
 The Python library is most easily installed using pip::
 
   pip install git+https://github.com/GaloisInc/pycryptol.git \
-      --allow-external BitVector \
-      --allow-unverified BitVector
+      --allow-external BitVector
 
 .. Note::
 
    The `BitVector
    <https://engineering.purdue.edu/kak/dist/BitVector-3.4.3.html>`_
-   library used in pycryptol is hosted outside the usual PyPI
-   repository, and so requires extra flags when installing.
+   library used in ``pycryptol`` is hosted outside the usual PyPI
+   repository, and so requires the ``--allow-external`` flag when
+   installing.
 
 Installing the Cryptol Server
 -----------------------------
 
-This guide assumes that you are already have GHC 7.10.1 or newer, and
+This guide assumes that you are already have GHC 7.8.4 or newer, and
 are able to build Cryptol from a GitHub checkout; see the `Cryptol
 documentation
 <https://github.com/GaloisInc/cryptol/blob/master/README.md#building-cryptol-from-source>`_
 for instructions.
 
-#. Check out the ``feature/cryptol-server`` branch from the Cryptol repository::
+#. Clone the Cryptol repository::
 
      $ git clone https://github.com/GaloisInc/cryptol.git
      ...
      $ cd cryptol
-     $ git checkout feature/cryptol-server
-     Branch feature/cryptol-server set up to track remote branch feature/cryptol-server from origin.
-     Switched to a new branch 'feature/cryptol-server'
 
-#. Build the Cryptol distribution::
+#. Build the Cryptol distribution with the ``CRYPTOL_SERVER`` option set::
 
-     $ make dist
+     $ CRYPTOL_SERVER=1 make dist
      ...
 
 #. Extract the resulting ``.tar`` or ``.zip`` file to a location of
