@@ -58,7 +58,7 @@ def main_loop():
         if cex is None:
             # No counterexample means the program is correct
             print 'Found the program!'
-            pp_program = crc32.eval('printProgram %s' % crc32.to_expr(program))
+            pp_program = crc32.eval('printProgram %s' % crc32.to_expr(pgm))
             for inst in pp_program:
                 print ''.join([chr(int(x)) for x in inst])
             break
