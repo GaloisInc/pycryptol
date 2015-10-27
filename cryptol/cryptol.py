@@ -158,18 +158,19 @@ class _CryptolModule(object):
         browse_resp = self.__req.recv_json()
         tl_decls = browse_resp['decls']['ifDecls']
         for decl in tl_decls:
+            name = decl['ifDeclName']['nIdent'][1]
             # TODO: handle infix operators. Right now they can be
             # accessed by strings through :meth:`.eval`, but since new
             # infix operators can't be defined in Python, we can't add
             # them to the returned object
-            is_infix = tl_decls[decl][0]['ifDeclInfix']
+            is_infix = decl['ifDeclInfix']
             if is_infix:
                 continue
             # TODO: properly handle polymorphic declarations
-            tvars = tl_decls[decl][0]['ifDeclSig']['sVars']
+            tvars = decl['ifDeclSig']['sVars']
             if len(tvars) is not 0:
                 continue
-            val = self.eval(decl)
+            val = self.eval(name)
             # give the proper name to the value, if it can be
             # set. First, check to make sure we're not naming a base
             # type, then check whether the name is a valid Python
@@ -178,14 +179,14 @@ class _CryptolModule(object):
                     re.match(_CryptolModule.__identifier, decl) is not None):
                 val.__name__ = decl.encode('utf-8')
             # set the docstring if available and settable
-            if 'ifDeclDoc' in tl_decls[decl][0]:
+            if 'ifDeclDoc' in decl:
                 try:
-                    val.__doc__ = tl_decls[decl][0]['ifDeclDoc'].encode('utf-8')
+                    val.__doc__ = decl['ifDeclDoc'].encode('utf-8')
                 except AttributeError:
                     pass
             # assign it to the object under construction; this
             # uses setattr so that the name used is dynamic
-            setattr(self.__class__, decl, val)
+            setattr(self.__class__, name, val)
 
     def __load_module(self, filepath):
         """Initialize this module with the file at the given path
@@ -559,4 +560,3 @@ def _is_function(sch):
     except (IndexError, KeyError):
         pass
     return ans
-    
