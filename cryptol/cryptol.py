@@ -6,6 +6,7 @@ from BitVector import BitVector
 import atexit
 import enum
 import os
+import string
 import re
 import subprocess
 import weakref
@@ -42,7 +43,7 @@ class Cryptol(object):
 
     :param int port: The port on which to bind the Cryptol server
 
-    :param bool spawn: Spawn a `cryptol-server`, or connect to an
+    :param bool spawn: Spawn a ``cryptol-server``, or connect to an
       already-running one?
 
     """
@@ -140,7 +141,7 @@ class _CryptolModule(object):
     :param Socket req: The request socket for this module context
 
     :param str filepath: The filepath of the Cryptol module to load, or
-        `None` for loading only the prelude
+        ``None`` for loading only the prelude
 
     """
     __identifier = re.compile(r"^[a-zA-Z_]\w*\Z")
@@ -210,14 +211,18 @@ class _CryptolModule(object):
     def __del__(self):
         self.exit()
 
-    def __tag_expr(self, tag, expr):
+    def __tag_expr(self, tag, expr, fmtargs):
         """Send a command with a string argument to the Cryptol interpreter.
 
         :param str tag: The tag to include in the JSON message
 
-        :param str expr: The string to include as the `expr` parameter
+        :param str expr: The string to include as the ``expr`` parameter
+
+        :param fmtargs: The values to substitute in for ``?`` in
+            ``expr`` (see :meth:`.template`)
 
         """
+        expr = _CryptolModule.template(expr, fmtargs)
         self.__req.send_json({'tag': tag, 'expr': expr})
         resp = self.__req.recv_json()
         return resp
@@ -318,13 +323,16 @@ class _CryptolModule(object):
                 'Unable to convert Python value into '
                 'Cryptol value %s' % str(pyval))
 
-    def eval(self, expr):
+    def eval(self, expr, fmtargs=()):
         """Evaluate a Cryptol expression in this module's context.
 
         :param str expr: The expression to evaluate
 
+        :param fmtargs: The values to substitute in for ``?`` in
+            ``expr`` (see :meth:`.template`)
+
         :return: A Python value representing the result of evaluating
-            `expr`
+            ``expr``
 
         :raises CryptolError: if an error occurs during Cryptol
             parsing, typechecking, or evaluation
@@ -333,7 +341,7 @@ class _CryptolModule(object):
             the Cryptol server
 
         """
-        val = self.__tag_expr('evalExpr', expr)
+        val = self.__tag_expr('evalExpr', expr, fmtargs)
         if val['tag'] == 'value':
             return self.__from_value(val['value'])
         elif val['tag'] == 'funValue':
@@ -345,10 +353,13 @@ class _CryptolModule(object):
                 'Cryptol evaluation returned a non-value '
                 'message: %s' % val)
 
-    def typeof(self, expr):
+    def typeof(self, expr, fmtargs=()):
         """Get the type of a Cryptol expression.
 
         :param str expr: The expression to typecheck
+
+        :param fmtargs: The values to substitute in for ``?`` in
+            ``expr`` (see :meth:`.template`)
 
         :return str: The pretty-printed representation of the type
 
@@ -361,7 +372,7 @@ class _CryptolModule(object):
         """
         # TODO: design Python representation of Cryptol types for a
         # semantically-meaningful return value
-        resp = self.__tag_expr('typeOf', expr)
+        resp = self.__tag_expr('typeOf', expr, fmtargs)
         if resp['tag'] == 'type':
             return resp['pp']
         elif resp['tag'] == 'interactiveError':
@@ -371,22 +382,25 @@ class _CryptolModule(object):
                 'Cryptol typechecking returned a non-type '
                 'message: %s' % resp)
 
-    def check(self, expr):
+    def check(self, expr, fmtargs=()):
         """Randomly test a Cryptol property."""
         # TODO: return counterexample value
-        return self.__tag_expr('check', expr)
+        return self.__tag_expr('check', expr, fmtargs)
 
-    def exhaust(self, expr):
+    def exhaust(self, expr, fmtargs=()):
         """Exhaustively check a Cryptol property."""
         # TODO: return counterexample value
-        return self.__tag_expr('exhaust', expr)
+        return self.__tag_expr('exhaust', expr, fmtargs)
 
-    def prove(self, expr, prover=Provers.CVC4, ite_solver=False):
+    def prove(self, expr, fmtargs=(), prover=Provers.CVC4, ite_solver=False):
         """Prove validity of a Cryptol property, or find a counterexample.
 
         :param str expr: The property to satisfy
 
-        :return: `None` if the property is valid, or a tuple of Python
+        :param fmtargs: The values to substitute in for ``?`` in
+            ``expr`` (see :meth:`.template`)
+
+        :return: ``None`` if the property is valid, or a tuple of Python
             values if a counterexample is found
 
         :raises ProverError: if an error occurs during prover invocation
@@ -405,7 +419,7 @@ class _CryptolModule(object):
         self.setopt('prover', prover.value)
         self.setopt('iteSolver', _bool_to_opt(ite_solver))
 
-        resp = self.__tag_expr('prove', expr)
+        resp = self.__tag_expr('prove', expr, fmtargs)
         if resp['tag'] == 'prove':
             if resp['counterexample'] is not None:
                 return tuple([self.__from_value(arg)
@@ -421,13 +435,16 @@ class _CryptolModule(object):
                 'Cryptol prove command returned an invalid '
                 'message: %s' % resp)
 
-    def sat(self, expr, sat_num=1, prover=Provers.CVC4, ite_solver=False):
+    def sat(self, expr, fmtargs=(), sat_num=1, prover=Provers.CVC4, ite_solver=False):
         """Find satisfying assignments for a Cryptol property.
 
         :param str expr: The property to satisfy
 
+        :param fmtargs: The values to substitute in for ``?`` in
+            ``expr`` (see :meth:`.template`)
+
         :param int sat_num: The maximum number of satisfying
-            assignments to return; use `None` for no maximum
+            assignments to return; use ``None`` for no maximum
 
         :param Provers prover: The prover to use
 
@@ -457,7 +474,7 @@ class _CryptolModule(object):
         self.setopt('prover', prover.value)
         self.setopt('iteSolver', _bool_to_opt(ite_solver))
 
-        resp = self.__tag_expr('sat', expr)
+        resp = self.__tag_expr('sat', expr, fmtargs)
         if resp['tag'] == 'sat':
             return [tuple([self.__from_value(arg) for arg in assignment])
                     for assignment in resp['assignments']]
@@ -480,7 +497,7 @@ class _CryptolModule(object):
 
         :param str option: The option to set
 
-        :param str value: The value to assign to `option`
+        :param str value: The value to assign to ``option``
 
         """
         # TODO: add more examples, special-case these into methods
@@ -510,23 +527,26 @@ class _CryptolModule(object):
     @staticmethod
     def to_expr(pyval):
         """Convert a Python value to a Cryptol expression"""
-        # VBit
+        # boolean -> Bit
         if isinstance(pyval, bool):
             return str(pyval)
-        # VRecord
+        # int -> decimal literal
+        if isinstance(pyval, int):
+            return str(pyval)
+        # dict -> record
         elif isinstance(pyval, dict):
             fields = ['%s = %s' % (k, _CryptolModule.to_expr(v))
                       for k, v in pyval.items()]
             return '{%s}' % ', '.join(fields)
-        # VTuple
+        # tuple -> tuple
         elif isinstance(pyval, tuple):
             elts = [_CryptolModule.to_expr(v) for v in pyval]
             return '(%s)' % ', '.join(elts)
-        # VSeq
+        # list of length n containing a -> [n]a
         elif isinstance(pyval, list):
             elts = [_CryptolModule.to_expr(v) for v in pyval]
             return '[%s]' % ', '.join(elts)
-        # VWord
+        # BitVector of length n -> [n]
         elif isinstance(pyval, BitVector):
             return '%d : [%d]' % (int(pyval), pyval.length())
         else:
@@ -534,6 +554,42 @@ class _CryptolModule(object):
             raise ValueError(
                 'Unable to convert Python value into '
                 'Cryptol expression: %s' % str(pyval))
+
+    @staticmethod
+    def template(template, args=()):
+        """Fill in a Cryptol template string.
+
+        This replaces instances of ``?`` with the provided tuple of
+        arguments converted by :meth:`.to_expr`, similarly to a format
+        string.
+
+        .. note:: The number of ``?`` s in the template and the number of
+            extra arguments must be equal.
+
+        :param str template: The template string
+
+        :param args: A tuple of values to splice into the template, or
+            a non-tuple value if only one hole exists (to splice a
+            single tuple, pass it in a Python 1-tuple, e.g., ``((True,
+            False),)`` .
+
+        :raises TypeError: if the number of arguments does not match
+            the number of holes in the template
+
+        """
+        holes = string.count(template, '?')
+        if not isinstance(args, tuple):
+            args = (args,)
+        if len(args) < holes:
+            raise TypeError(
+                'not all arguments converted during Cryptol string templating')
+        if len(args) > holes:
+            raise TypeError(
+                'not enough arguments for Cryptol template string')
+        result = template
+        for arg in args:
+            result = string.replace(result, '?', _CryptolModule.to_expr(arg), 1)
+        return result
 
 class CryptolError(Exception):
     """Base class for all errors arising from Cryptol"""
