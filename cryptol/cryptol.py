@@ -171,7 +171,20 @@ class _CryptolModule(object):
             tvars = decl['ifDeclSig']['sVars']
             if len(tvars) is not 0:
                 continue
-            val = self.eval(name)
+
+            # Run the evaluation
+            val_resp = self.__tag_expr('evalExpr', name, ())
+            if val_resp['tag'] == 'value':
+                val = self.__from_value(val_resp['value'])
+            elif val_resp['tag'] == 'funValue':
+                val = self.__from_funvalue(val_resp['handle'], static=False)
+            elif val_resp['tag'] == 'interactiveError':
+                raise CryptolError(val_resp['pp'])
+            else:
+                raise ValueError(
+                    'Cryptol evaluation returned a non-value '
+                    'message: %s' % val_resp)
+
             # give the proper name to the value, if it can be
             # set. First, check to make sure we're not naming a base
             # type, then check whether the name is a valid Python
@@ -269,13 +282,15 @@ class _CryptolModule(object):
             return None
         raise ValueError('Could not convert message to value: %s' % val)
 
-    def __from_funvalue(self, handle):
+    def __from_funvalue(self, handle, static=True):
         """Convert a JSON-formatted Cryptol closure to a Python function.
 
         This is separated out from :meth:`.__from_value` since the
         Cryptol server tags closure messages differently from regular
         values.
 
+        :param bool static: Whether to return a static function, or a
+        method on the current module
         """
         def clos(self, arg):
             """Closure for callable Cryptol function"""
@@ -286,13 +301,20 @@ class _CryptolModule(object):
             if val['tag'] == 'value':
                 return self.__from_value(val['value'])
             elif val['tag'] == 'funValue':
-                return self.__from_funvalue(val['handle'])
+                return self.__from_funvalue(val['handle'], static)
             else:
                 raise ValueError(
                     'No value returned from applying Cryptol function; '
                     'instead got %s' % str(val))
+        def static_clos(arg):
+            """Closure for callable Cryptol function"""
+            return clos(self, arg)
         setattr(clos, '__name__', '<cryptol_closure>')
-        return clos
+        setattr(static_clos, '__name__', '<cryptol_closure>')
+        if static:
+            return static_clos
+        else:
+            return clos
 
     def __to_value(self, pyval):
         """Convert a Python value to a JSON-formatted Cryptol value."""
