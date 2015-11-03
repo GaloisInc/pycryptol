@@ -107,7 +107,7 @@ class Cryptol(object):
         # TODO: get the module name from the AST, don't just guess
         # from the filepath
         mod_name = os.path.splitext(os.path.basename(filepath))[0]
-        cls = type("%s <Cryptol>" % mod_name, (_CryptolModule,), {})
+        cls = type("{} <Cryptol>".format(mod_name), (_CryptolModule,), {})
         mod = cls(req, filepath)
         self.__loaded_modules.append(weakref.ref(mod))
         return mod
@@ -181,9 +181,9 @@ class _CryptolModule(object):
             elif val_resp['tag'] == 'interactiveError':
                 raise CryptolError(val_resp['pp'])
             else:
-                raise ValueError(
+                raise PycryptolInternalError(
                     'Cryptol evaluation returned a non-value '
-                    'message: %s' % val_resp)
+                    'message: {}'.format(val_resp))
 
             # give the proper name to the value, if it can be
             # set. First, check to make sure we're not naming a base
@@ -280,7 +280,8 @@ class _CryptolModule(object):
         # funvalue message
         if 'function' in val:
             return None
-        raise ValueError('Could not convert message to value: %s' % val)
+        raise PycryptolInternalError(
+            'Could not convert message to value: {}'.format(val))
 
     def __from_funvalue(self, handle, static=True):
         """Convert a JSON-formatted Cryptol closure to a Python function.
@@ -303,9 +304,9 @@ class _CryptolModule(object):
             elif val['tag'] == 'funValue':
                 return self.__from_funvalue(val['handle'], static)
             else:
-                raise ValueError(
+                raise PycryptolInternalError(
                     'No value returned from applying Cryptol function; '
-                    'instead got %s' % str(val))
+                    'instead got {!s}'.format(val))
         def static_clos(arg):
             """Closure for callable Cryptol function"""
             return clos(self, arg)
@@ -343,7 +344,7 @@ class _CryptolModule(object):
             # TODO: convert strings to ASCII?
             raise ValueError(
                 'Unable to convert Python value into '
-                'Cryptol value %s' % str(pyval))
+                'Cryptol value {!s}'.format(pyval))
 
     def eval(self, expr, fmtargs=()):
         """Evaluate a Cryptol expression in this module's context.
@@ -359,9 +360,6 @@ class _CryptolModule(object):
         :raises CryptolError: if an error occurs during Cryptol
             parsing, typechecking, or evaluation
 
-        :raises ValueError: if an unexpected message is returned from
-            the Cryptol server
-
         """
         val = self.__tag_expr('evalExpr', expr, fmtargs)
         if val['tag'] == 'value':
@@ -371,9 +369,9 @@ class _CryptolModule(object):
         elif val['tag'] == 'interactiveError':
             raise CryptolError(val['pp'])
         else:
-            raise ValueError(
+            raise PycryptolInternalError(
                 'Cryptol evaluation returned a non-value '
-                'message: %s' % val)
+                'message: {}'.format(val))
 
     def typeof(self, expr, fmtargs=()):
         """Get the type of a Cryptol expression.
@@ -388,9 +386,6 @@ class _CryptolModule(object):
         :raises CryptolError: if an error occurs during Cryptol
             parsing or typechecking
 
-        :raises ValueError: if an unexpected message is returned from
-            the Cryptol server
-
         """
         # TODO: design Python representation of Cryptol types for a
         # semantically-meaningful return value
@@ -400,9 +395,9 @@ class _CryptolModule(object):
         elif resp['tag'] == 'interactiveError':
             raise CryptolError(resp['pp'])
         else:
-            raise ValueError(
+            raise PycryptolInternalError(
                 'Cryptol typechecking returned a non-type '
-                'message: %s' % resp)
+                'message: {}'.format(resp))
 
     def check(self, expr, fmtargs=()):
         """Randomly test a Cryptol property."""
@@ -430,8 +425,8 @@ class _CryptolModule(object):
         :raises CryptolError: if an error occurs during Cryptol
             parsing, typechecking, evaluation, or symbolic simulation
 
-        :raises ValueError: if an unexpected message is returned from
-            the Cryptol server
+        :raises PycryptolInternalError: if an unexpected message is
+            returned from the Cryptol server
 
         """
         # TODO: returning `None` is really ugly; should have some sort
@@ -453,11 +448,16 @@ class _CryptolModule(object):
         elif resp['tag'] == 'interactiveError':
             raise CryptolError(resp['pp'])
         else:
-            raise ValueError(
+            raise PycryptolInternalError(
                 'Cryptol prove command returned an invalid '
-                'message: %s' % resp)
+                'message: {}'.format(resp))
 
-    def sat(self, expr, fmtargs=(), sat_num=1, prover=Provers.CVC4, ite_solver=False):
+    def sat(self,
+            expr,
+            fmtargs=(),
+            sat_num=1,
+            prover=Provers.CVC4,
+            ite_solver=False):
         """Find satisfying assignments for a Cryptol property.
 
         :param str expr: The property to satisfy
@@ -482,8 +482,8 @@ class _CryptolModule(object):
         :raises CryptolError: if an error occurs during Cryptol
             parsing, typechecking, evaluation, or symbolic simulation
 
-        :raises ValueError: if an unexpected message is returned from
-            the Cryptol server
+        :raises PycryptolInternalError: if an unexpected message is
+            returned from the Cryptol server
 
         """
         # TODO: disambiguate sat with no arguments from unsat
@@ -505,9 +505,9 @@ class _CryptolModule(object):
         elif resp['tag'] == 'interactiveError':
             raise CryptolError(resp['pp'])
         else:
-            raise ValueError(
+            raise PycryptolInternalError(
                 'Cryptol SAT checking returned an invalid '
-                'message: %s' % resp)
+                'message: {}'.format(resp))
 
     def setopt(self, option, value):
         """Set an option in the Cryptol session for this module.
@@ -557,25 +557,25 @@ class _CryptolModule(object):
             return str(pyval)
         # dict -> record
         elif isinstance(pyval, dict):
-            fields = ['%s = %s' % (k, _CryptolModule.to_expr(v))
+            fields = ['{} = {}'.format(k, _CryptolModule.to_expr(v))
                       for k, v in pyval.items()]
-            return '{%s}' % ', '.join(fields)
+            return '{{{}}}'.format(', '.join(fields))
         # tuple -> tuple
         elif isinstance(pyval, tuple):
             elts = [_CryptolModule.to_expr(v) for v in pyval]
-            return '(%s)' % ', '.join(elts)
+            return '({})'.format(', '.join(elts))
         # list of length n containing a -> [n]a
         elif isinstance(pyval, list):
             elts = [_CryptolModule.to_expr(v) for v in pyval]
-            return '[%s]' % ', '.join(elts)
+            return '[{}]'.format(', '.join(elts))
         # BitVector of length n -> [n]
         elif isinstance(pyval, BitVector):
-            return '%d : [%d]' % (int(pyval), pyval.length())
+            return '{:d} : [{}]'.format(pyval, pyval.length())
         else:
             # TODO: convert strings to ASCII?
-            raise ValueError(
+            raise TypeError(
                 'Unable to convert Python value into '
-                'Cryptol expression: %s' % str(pyval))
+                'Cryptol expression: {!s}'.format(pyval))
 
     @staticmethod
     def template(template, args=()):
@@ -614,7 +614,7 @@ class _CryptolModule(object):
         return result
 
 class CryptolError(Exception):
-    """Base class for all errors arising from Cryptol"""
+    """Base class for errors arising from the Cryptol interpreter"""
     # TODO: add a class hierarchy to break down the different types of
     # Cryptol errors
     pass
@@ -622,6 +622,21 @@ class CryptolError(Exception):
 class ProverError(CryptolError):
     """An error arising from the prover configured for Cryptol"""
     pass
+
+class PycryptolInternalError(Exception):
+    """An internal error in pycryptol that indicates a bug"""
+    def __init__(self, msg):
+        self.msg = msg
+        super(PycryptolInternalError, self).__init__()
+
+    def __str__(self):
+        template = (
+            'Encountered an error in pycryptol:\n\n'
+            '\t{0}\n\n'
+            'Please report this as a bug at '
+            'https://github.com/GaloisInc/pycryptol/issues'
+        )
+        return template.format(self.msg)
 
 def _bool_to_opt(boolean):
     """Convert a boolean to ``on`` or ``off``"""
