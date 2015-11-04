@@ -47,7 +47,7 @@ class Cryptol(object):
     :param int port: The port on which to bind the Cryptol server
 
     :raises CryptolServerError: if the ``cryptol_server`` executable
-        can't be found
+        can't be found or exits unexpectedly
 
     """
     def __init__(self,
