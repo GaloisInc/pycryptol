@@ -37,32 +37,44 @@ class Cryptol(object):
     main way to use one of these instances is to call
     :meth:`.load_module` or :meth:`.prelude`.
 
-    :param str cryptol_server: The path to the Cryptol server executable
+    :param str cryptol_server: The path to the Cryptol server
+        executable; pass ``None`` to instead connect to an
+        already-running server
 
     :param str addr: The interface on which to bind the Cryptol server
 
     :param int port: The port on which to bind the Cryptol server
 
-    :param bool spawn: Spawn a ``cryptol-server``, or connect to an
-      already-running one?
+    :raises CryptolServerError: if the ``cryptol_server`` executable
+        can't be found
 
     """
     def __init__(self,
                  cryptol_server='cryptol-server',
                  addr='tcp://127.0.0.1',
-                 port=5555,
-                 spawn=True):
+                 port=5555):
         self.__loaded_modules = []
         self.__ctx = zmq.Context()
         self.__addr = addr
 
-        if spawn:
+        if cryptol_server is not None:
             # Start the server
             null = open(os.devnull, 'wb')
-            self.__server = subprocess.Popen([cryptol_server, str(port)],
-                                             stdin=subprocess.PIPE,
-                                             stdout=null,
-                                             stderr=null)
+            try:
+                self.__server = subprocess.Popen([cryptol_server, str(port)],
+                                                 stdin=subprocess.PIPE,
+                                                 stdout=null,
+                                                 stderr=null)
+            except OSError as err:
+                if err.errno == os.errno.ENOENT:
+                    raise CryptolServerError(
+                        'Could not find Cryptol server executable {}.\n'
+                        'Make sure it is on your system path, or pass a '
+                        'different path for the cryptol_server argument.'
+                        .format(cryptol_server)
+                        )
+                else:
+                    raise
         else:
             self.__server = False
         self.__main_req = self.__ctx.socket(zmq.REQ)
@@ -234,7 +246,14 @@ class _CryptolModule(object):
         :param fmtargs: The values to substitute in for ``?`` in
             ``expr`` (see :meth:`.template`)
 
+        :raises TypeError: if the given expression is not a string
+
         """
+        if not isinstance(expr, basestring):
+            raise TypeError(
+                'Expected Cryptol expression as string, '
+                'got unsupported type {!r}'.format(type(expr).__name__)
+                )
         expr = _CryptolModule.template(expr, fmtargs)
         self.__req.send_json({'tag': tag, 'expr': expr})
         resp = self.__req.recv_json()
@@ -425,9 +444,6 @@ class _CryptolModule(object):
         :raises CryptolError: if an error occurs during Cryptol
             parsing, typechecking, evaluation, or symbolic simulation
 
-        :raises PycryptolInternalError: if an unexpected message is
-            returned from the Cryptol server
-
         """
         # TODO: returning `None` is really ugly; should have some sort
         # of solverresult api
@@ -481,9 +497,6 @@ class _CryptolModule(object):
 
         :raises CryptolError: if an error occurs during Cryptol
             parsing, typechecking, evaluation, or symbolic simulation
-
-        :raises PycryptolInternalError: if an unexpected message is
-            returned from the Cryptol server
 
         """
         # TODO: disambiguate sat with no arguments from unsat
@@ -619,12 +632,21 @@ class CryptolError(Exception):
     # Cryptol errors
     pass
 
+class CryptolServerError(CryptolError):
+    """An error starting or communicating with the Cryptol server executable"""
+    pass
+
 class ProverError(CryptolError):
     """An error arising from the prover configured for Cryptol"""
     pass
 
 class PycryptolInternalError(Exception):
-    """An internal error in pycryptol that indicates a bug"""
+    """An internal error in pycryptol that indicates a bug
+
+    This deliberately does not extend :class:`.CryptolError`, since it
+    should not be expected during normal execution.
+
+    """
     def __init__(self, msg):
         self.msg = msg
         super(PycryptolInternalError, self).__init__()

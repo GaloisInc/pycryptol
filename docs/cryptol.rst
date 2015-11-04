@@ -35,5 +35,11 @@ cryptol module
 .. autoexception:: cryptol.cryptol.CryptolError
    :show-inheritance:
 
+.. autoexception:: cryptol.cryptol.CryptolServerError
+   :show-inheritance:
+
 .. autoexception:: cryptol.cryptol.ProverError
+   :show-inheritance:
+
+.. autoexception:: cryptol.cryptol.PycryptolInternalError
    :show-inheritance:
