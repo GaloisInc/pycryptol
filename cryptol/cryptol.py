@@ -7,6 +7,7 @@ import atexit
 import enum
 import os
 import string
+import time
 import re
 import subprocess
 import weakref
@@ -75,6 +76,16 @@ class Cryptol(object):
                         )
                 else:
                     raise
+
+            # wait a little bit to make sure the server doesn't
+            # promptly exit
+            time.sleep(0.01)
+            result = self.__server.poll()
+            if result is not None:
+                raise CryptolServerError(
+                    'Cryptol server executable {!r} exited unexpectedly '
+                    'with exit code {:d}'.format(cryptol_server, result)
+                    )
         else:
             self.__server = False
         self.__main_req = self.__ctx.socket(zmq.REQ)
