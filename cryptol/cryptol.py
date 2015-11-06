@@ -69,7 +69,7 @@ class Cryptol(object):
             except OSError as err:
                 if err.errno == os.errno.ENOENT:
                     raise CryptolServerError(
-                        'Could not find Cryptol server executable {}.\n'
+                        'Could not find Cryptol server executable {!r}.\n'
                         'Make sure it is on your system path, or pass a '
                         'different path for the cryptol_server argument.'
                         .format(cryptol_server)
@@ -170,6 +170,7 @@ class _CryptolModule(object):
     __identifier = re.compile(r"^[a-zA-Z_]\w*\Z")
 
     def __init__(self, req, filepath=None):
+        self.__decls = {}
         self.__ascii = False
         self.__base = 16
         self.__ite_solver = False
@@ -183,24 +184,21 @@ class _CryptolModule(object):
         tl_decls = browse_resp['decls']['ifDecls']
         for decl in tl_decls:
             name = decl['ifDeclName']['nIdent'][1]
-            # TODO: handle infix operators. Right now they can be
-            # accessed by strings through :meth:`.eval`, but since new
-            # infix operators can't be defined in Python, we can't add
-            # them to the returned object
-            is_infix = decl['ifDeclInfix']
-            if is_infix:
-                continue
+
             # TODO: properly handle polymorphic declarations
             tvars = decl['ifDeclSig']['sVars']
             if len(tvars) is not 0:
+                # TODO: warn
                 continue
 
             # Run the evaluation
-            val_resp = self.__tag_expr('evalExpr', name, ())
+            val_resp = self.__tag_expr('evalExpr', '({})'.format(name), ())
             if val_resp['tag'] == 'value':
                 val = self.__from_value(val_resp['value'])
+                sval = val
             elif val_resp['tag'] == 'funValue':
                 val = self.__from_funvalue(val_resp['handle'], static=False)
+                sval = self.__from_funvalue(val_resp['handle'], static=True)
             elif val_resp['tag'] == 'interactiveError':
                 raise CryptolError(val_resp['pp'])
             else:
@@ -208,21 +206,45 @@ class _CryptolModule(object):
                     'Cryptol evaluation returned a non-value '
                     'message: {}'.format(val_resp))
 
-            # give the proper name to the value, if it can be
-            # set. First, check to make sure we're not naming a base
-            # type, then check whether the name is a valid Python
-            # identifier. TODO: name mangling for invalid identifiers?
-            if (hasattr(val, '__name__') and
-                    re.match(_CryptolModule.__identifier, decl) is not None):
-                val.__name__ = decl.encode('utf-8')
+            # set the name, if possible
+            try:
+                val.__name__ = name.encode('utf-8')
+                sval.__name__ = name.encode('utf-8')
+            except AttributeError:
+                pass
+
             # set the docstring if available and settable
             if 'ifDeclDoc' in decl:
                 try:
                     val.__doc__ = decl['ifDeclDoc'].encode('utf-8')
+                    sval.__doc__ = decl['ifDeclDoc'].encode('utf-8')
                 except AttributeError:
                     pass
-            # assign it to the object under construction; this
-            # uses setattr so that the name used is dynamic
+
+            # at this point the decl is ready to at least be added to
+            # the decls dictionary, if not as a member to the class,
+            # but interpret it statically
+            self.__decls[name] = sval
+
+            # Since new infix operators can't be defined in Python, we
+            # can't add them to the returned object, only to the decls
+            # dictionary.
+            is_infix = decl['ifDeclInfix']
+            if is_infix:
+                # TODO: warn
+                continue
+
+            # filter out invalid identifiers
+            if re.match(_CryptolModule.__identifier, name) is None:
+                continue
+
+            # make sure the name doesn't already exist in the current
+            # object to prevent overwriting things like __class__
+            if hasattr(self, name):
+                # TODO: warn for collisions
+                continue
+
+            # add it to the object under construction
             setattr(self.__class__, name, val)
 
     def __load_module(self, filepath):
@@ -376,7 +398,29 @@ class _CryptolModule(object):
                 'Unable to convert Python value into '
                 'Cryptol value {!s}'.format(pyval))
 
+    def decl(self, name):
+        """Return a top-level Cryptol declaration in the current module
+
+        Because Cryptol and Python have different syntaxes for
+        identifiers, not all Cryptol declarations can be made into
+        members on the object returned by :meth:`.load_module`. Use
+        this method to access other declarations without reevaluating
+        them.
+
+        :param str name: The name of the declaration
+
+        :return: A Python value representing the named declaration
+
+        :raises CryptolError: if the declaration is not in scope
+
+        """
+        try:
+            return self.__decls[name]
+        except KeyError:
+            raise CryptolError('Value not in scope: {}'.format(name))
+
     def eval(self, expr, fmtargs=()):
+
         """Evaluate a Cryptol expression in this module's context.
 
         :param str expr: The expression to evaluate

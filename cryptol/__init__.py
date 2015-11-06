@@ -1,3 +1,4 @@
 # -*- coding: utf-8 -*-
 
-from .cryptol import Cryptol, Provers, CryptolError, ProverError
+from .cryptol import (Cryptol, Provers,
+                      CryptolError, CryptolServerError, ProverError)
