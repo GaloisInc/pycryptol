@@ -12,6 +12,15 @@ cryptol module
     :members:
     :undoc-members:
 
+.. autoclass:: cryptol.cryptol.ProofResult
+    :members:
+
+.. autoclass:: cryptol.cryptol.SatResult
+    :members:
+
+.. autoclass:: cryptol.cryptol.AllSatResult
+    :members:
+
 .. autoclass:: cryptol.cryptol.Provers
 
     .. autoattribute:: cryptol.cryptol.Provers.ANY

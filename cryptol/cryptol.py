@@ -31,6 +31,98 @@ class Provers(enum.Enum):
     Z3 = 'z3'
     """Use `Z3 <https://github.com/Z3Prover/z3>`_"""
 
+class ProofResult(object):
+    """The result of a call to :meth:`.prove`"""
+
+    def __init__(self, is_valid, cex):
+        if is_valid and cex is not None:
+            raise PycryptolInternalError(
+                'Counterexample given for valid property')
+        self.__is_valid = is_valid
+        self.__cex = cex
+
+    def __str__(self):
+        if self.__is_valid:
+            return "valid"
+        else:
+            return "invalid"
+
+    def is_valid(self):
+        """Is the property valid?"""
+        return self.__is_valid
+
+    def has_counterexample(self):
+        """Does the property have a counterexample?"""
+        return self.__cex is not None
+
+    def get_counterexample(self):
+        """Return the counterexample as a tuple of arguments"""
+        if self.__cex is None:
+            raise ValueError('No counterexample for valid property')
+        return self.__cex
+
+class SatResult(object):
+    """The result of a call to :meth:`.sat` with ``sat_num=1``"""
+
+    def __init__(self, is_sat, args):
+        if is_sat and args is None:
+            raise PycryptolInternalError(
+                'No satisfying assignment given for satisfiable property')
+        self.__is_sat = is_sat
+        self.__args = args
+
+    def __str__(self):
+        if self.__is_sat:
+            return 'sat'
+        else:
+            return 'unsat'
+
+    def is_sat(self):
+        """Is the property satisfiable?"""
+        return self.__is_sat
+
+    def has_assignment(self):
+        """Does the property have a satisfying assignment?"""
+        return self.__args is not None
+
+    def get_assignment(self):
+        """Return the satisfying assignment as a tuple of arguments"""
+        if self.__args is None:
+            raise ValueError('No satisfying assignment for unsat property')
+        return self.__args
+
+class AllSatResult(object):
+    """The result of a call to :meth:`.sat` with ``sat_num`` other than ``1``"""
+
+    def __init__(self, is_sat, argss):
+        if is_sat and argss is None:
+            raise PycryptolInternalError(
+                'No satisfying assignments given for satisfiable property')
+        self.__is_sat = is_sat
+        self.__argss = argss
+
+    def __str__(self):
+        if self.__is_sat:
+            return 'sat'
+        else:
+            return 'unsat'
+
+    def is_sat(self):
+        """Is the property satisfiable?"""
+        return self.__is_sat
+
+    def assignment_count(self):
+        """How many satisfying assignments were found?"""
+        if self.__argss is None:
+            raise ValueError('No satisfying assignments for unsat property')
+        return len(self.__argss)
+
+    def get_assignments(self):
+        """Return the satisfying assignments as a list of tuples of arguments"""
+        if self.__argss is None:
+            raise ValueError('No satisfying assignments for unsat property')
+        return self.__argss
+
 class Cryptol(object):
     """A Cryptol interpreter session.
 
@@ -173,7 +265,6 @@ class _CryptolModule(object):
         self.__decls = {}
         self.__ascii = False
         self.__base = 16
-        self.__ite_solver = False
         self.__mono_binds = True
         self.__prover = Provers.CVC4
         self.__req = req
@@ -483,16 +574,15 @@ class _CryptolModule(object):
         # TODO: return counterexample value
         return self.__tag_expr('exhaust', expr, fmtargs)
 
-    def prove(self, expr, fmtargs=(), prover=Provers.CVC4, ite_solver=False):
+    def prove(self, expr, fmtargs=(), prover=Provers.CVC4):
         """Prove validity of a Cryptol property, or find a counterexample.
 
-        :param str expr: The property to satisfy
+        :param str expr: The property to prove
 
         :param fmtargs: The values to substitute in for ``?`` in
             ``expr`` (see :meth:`.template`)
 
-        :return: ``None`` if the property is valid, or a tuple of Python
-            values if a counterexample is found
+        :return: A :class:`.ProofResult` for this property
 
         :raises ProverError: if an error occurs during prover invocation
 
@@ -500,20 +590,18 @@ class _CryptolModule(object):
             parsing, typechecking, evaluation, or symbolic simulation
 
         """
-        # TODO: returning `None` is really ugly; should have some sort
-        # of solverresult api
-
         # set keywords
         self.setopt('prover', prover.value)
-        self.setopt('iteSolver', _bool_to_opt(ite_solver))
 
         resp = self.__tag_expr('prove', expr, fmtargs)
+
         if resp['tag'] == 'prove':
             if resp['counterexample'] is not None:
-                return tuple([self.__from_value(arg)
+                args = tuple([self.__from_value(arg)
                               for arg in resp['counterexample']])
+                return ProofResult(False, args)
             else:
-                return None
+                return ProofResult(True, None)
         elif resp['tag'] == 'proverError':
             raise ProverError(resp['message'])
         elif resp['tag'] == 'interactiveError':
@@ -527,8 +615,7 @@ class _CryptolModule(object):
             expr,
             fmtargs=(),
             sat_num=1,
-            prover=Provers.CVC4,
-            ite_solver=False):
+            prover=Provers.CVC4):
         """Find satisfying assignments for a Cryptol property.
 
         :param str expr: The property to satisfy
@@ -541,12 +628,8 @@ class _CryptolModule(object):
 
         :param Provers prover: The prover to use
 
-        :param bool ite_solver: Whether to use the solver during
-            symbolic execution; can prevent non-termination at the
-            cost of performance
-
-        :return: A list containing the satisfying assignments as
-            tuples of Python values
+        :return: Either :class:`.SatResult` or :class:`.AllSatResult`,
+            depending on ``sat_num``
 
         :raises ProverError: if an error occurs during prover invocation
 
@@ -554,20 +637,33 @@ class _CryptolModule(object):
             parsing, typechecking, evaluation, or symbolic simulation
 
         """
-        # TODO: disambiguate sat with no arguments from unsat
-
         # set keywords
         if sat_num is None:
             self.setopt('satNum', 'all')
         else:
             self.setopt('satNum', str(sat_num))
         self.setopt('prover', prover.value)
-        self.setopt('iteSolver', _bool_to_opt(ite_solver))
 
         resp = self.__tag_expr('sat', expr, fmtargs)
+
         if resp['tag'] == 'sat':
-            return [tuple([self.__from_value(arg) for arg in assignment])
-                    for assignment in resp['assignments']]
+            argss = [tuple([self.__from_value(arg) for arg in assignment])
+                     for assignment in resp['assignments']]
+            # Return different result types based on ``sat_num``
+            if sat_num == 1:
+                if len(argss) == 0:
+                    return SatResult(False, None)
+                elif len(argss) == 1:
+                    return SatResult(True, argss[0])
+                else:
+                    raise PycryptolInternalError(
+                        'Multiple satisfying assignments with sat_num != 1')
+            else:
+                if len(argss) == 0:
+                    return AllSatResult(False, None)
+                else:
+                    return AllSatResult(True, argss)
+
         elif resp['tag'] == 'proverError':
             raise ProverError(resp['message'])
         elif resp['tag'] == 'interactiveError':
