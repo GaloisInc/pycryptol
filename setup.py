@@ -59,4 +59,12 @@ setup(
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
     install_requires=['BitVector', 'enum34', 'pyzmq'],
+
+    setup_requires=[
+        'pytest-runner',
+    ],
+
+    tests_require=[
+        'pytest',
+    ],
 )
