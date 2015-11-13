@@ -161,7 +161,7 @@ class Cryptol(object):
             except OSError as err:
                 if err.errno == os.errno.ENOENT:
                     raise CryptolServerError(
-                        'Could not find Cryptol server executable {!r}.\n'
+                        u'Could not find Cryptol server executable {!r}.\n'
                         'Make sure it is on your system path, or pass a '
                         'different path for the cryptol_server argument.'
                         .format(cryptol_server)
@@ -175,7 +175,7 @@ class Cryptol(object):
             result = self.__server.poll()
             if result is not None:
                 raise CryptolServerError(
-                    'Cryptol server executable {!r} exited unexpectedly '
+                    u'Cryptol server executable {!r} exited unexpectedly '
                     'with exit code {:d}'.format(cryptol_server, result)
                     )
         else:
@@ -221,8 +221,9 @@ class Cryptol(object):
         req = self.__new_client()
         # TODO: get the module name from the AST, don't just guess
         # from the filepath
-        mod_name = os.path.splitext(os.path.basename(filepath))[0]
-        cls = type("{} <Cryptol>".format(mod_name), (_CryptolModule,), {})
+        mod_name = os.path.splitext(
+            os.path.basename(filepath))[0].encode('ascii', 'replace')
+        cls = type('{} <Cryptol>'.format(mod_name), (_CryptolModule,), {})
         mod = cls(req, filepath)
         self.__loaded_modules.append(weakref.ref(mod))
         return mod
@@ -283,7 +284,7 @@ class _CryptolModule(object):
                 continue
 
             # Run the evaluation
-            val_resp = self.__tag_expr('evalExpr', '({})'.format(name), ())
+            val_resp = self.__tag_expr('evalExpr', u'({})'.format(name), ())
             if val_resp['tag'] == 'value':
                 val = self.__from_value(val_resp['value'])
                 sval = val
@@ -294,7 +295,7 @@ class _CryptolModule(object):
                 raise CryptolError(val_resp['pp'])
             else:
                 raise PycryptolInternalError(
-                    'Cryptol evaluation returned a non-value '
+                    u'Cryptol evaluation returned a non-value '
                     'message: {}'.format(val_resp))
 
             # set the name, if possible
@@ -375,7 +376,7 @@ class _CryptolModule(object):
         """
         if not isinstance(expr, basestring):
             raise TypeError(
-                'Expected Cryptol expression as string, '
+                u'Expected Cryptol expression as string, '
                 'got unsupported type {!r}'.format(type(expr).__name__)
                 )
         expr = _CryptolModule.template(expr, fmtargs)
@@ -424,7 +425,7 @@ class _CryptolModule(object):
         if 'function' in val:
             return None
         raise PycryptolInternalError(
-            'Could not convert message to value: {}'.format(val))
+            u'Could not convert message to value: {}'.format(val))
 
     def __from_funvalue(self, handle, static=True):
         """Convert a JSON-formatted Cryptol closure to a Python function.
@@ -448,7 +449,7 @@ class _CryptolModule(object):
                 return self.__from_funvalue(val['handle'], static)
             else:
                 raise PycryptolInternalError(
-                    'No value returned from applying Cryptol function; '
+                    u'No value returned from applying Cryptol function; '
                     'instead got {!s}'.format(val))
         def static_clos(arg):
             """Closure for callable Cryptol function"""
@@ -486,7 +487,7 @@ class _CryptolModule(object):
         else:
             # TODO: convert strings to ASCII?
             raise ValueError(
-                'Unable to convert Python value into '
+                u'Unable to convert Python value into '
                 'Cryptol value {!s}'.format(pyval))
 
     def decl(self, name):
@@ -508,7 +509,7 @@ class _CryptolModule(object):
         try:
             return self.__decls[name]
         except KeyError:
-            raise CryptolError('Value not in scope: {}'.format(name))
+            raise CryptolError(u'Value not in scope: {}'.format(name))
 
     def eval(self, expr, fmtargs=()):
 
@@ -535,7 +536,7 @@ class _CryptolModule(object):
             raise CryptolError(val['pp'])
         else:
             raise PycryptolInternalError(
-                'Cryptol evaluation returned a non-value '
+                u'Cryptol evaluation returned a non-value '
                 'message: {}'.format(val))
 
     def typeof(self, expr, fmtargs=()):
@@ -561,7 +562,7 @@ class _CryptolModule(object):
             raise CryptolError(resp['pp'])
         else:
             raise PycryptolInternalError(
-                'Cryptol typechecking returned a non-type '
+                u'Cryptol typechecking returned a non-type '
                 'message: {}'.format(resp))
 
     def check(self, expr, fmtargs=()):
@@ -608,7 +609,7 @@ class _CryptolModule(object):
             raise CryptolError(resp['pp'])
         else:
             raise PycryptolInternalError(
-                'Cryptol prove command returned an invalid '
+                u'Cryptol prove command returned an invalid '
                 'message: {}'.format(resp))
 
     def sat(self,
@@ -670,7 +671,7 @@ class _CryptolModule(object):
             raise CryptolError(resp['pp'])
         else:
             raise PycryptolInternalError(
-                'Cryptol SAT checking returned an invalid '
+                u'Cryptol SAT checking returned an invalid '
                 'message: {}'.format(resp))
 
     def setopt(self, option, value):
@@ -721,20 +722,20 @@ class _CryptolModule(object):
             return str(pyval)
         # dict -> record
         elif isinstance(pyval, dict):
-            fields = ['{} = {}'.format(k, _CryptolModule.to_expr(v))
+            fields = [u'{} = {}'.format(k, _CryptolModule.to_expr(v))
                       for k, v in pyval.items()]
-            return '{{{}}}'.format(', '.join(fields))
+            return u'{{{}}}'.format(', '.join(fields))
         # tuple -> tuple
         elif isinstance(pyval, tuple):
             elts = [_CryptolModule.to_expr(v) for v in pyval]
-            return '({})'.format(', '.join(elts))
+            return u'({})'.format(', '.join(elts))
         # list of length n containing a -> [n]a
         elif isinstance(pyval, list):
             elts = [_CryptolModule.to_expr(v) for v in pyval]
-            return '[{}]'.format(', '.join(elts))
+            return u'[{}]'.format(', '.join(elts))
         # BitVector of length n -> [n]
         elif isinstance(pyval, BitVector):
-            return '{:d} : [{}]'.format(int(pyval), pyval.length())
+            return u'{:d} : [{}]'.format(int(pyval), pyval.length())
         else:
             # TODO: convert strings to ASCII?
             raise TypeError(
@@ -804,7 +805,7 @@ class PycryptolInternalError(Exception):
 
     def __str__(self):
         template = (
-            'Encountered an error in pycryptol:\n\n'
+            u'Encountered an error in pycryptol:\n\n'
             '\t{0}\n\n'
             'Please report this as a bug at '
             'https://github.com/GaloisInc/pycryptol/issues'
