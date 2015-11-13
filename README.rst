@@ -7,4 +7,6 @@ at a standalone Cryptol console. Where possible, the bindings attempt
 to provide deeper integration so that Cryptol values may be used
 transparently as if they were Python values.
 
+For full documentation, see http://pycryptol.readthedocs.org/en/latest/
+
 .. _Cryptol: http://www.cryptol.net/
