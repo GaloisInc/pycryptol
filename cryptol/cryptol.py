@@ -734,7 +734,7 @@ class _CryptolModule(object):
             return '[{}]'.format(', '.join(elts))
         # BitVector of length n -> [n]
         elif isinstance(pyval, BitVector):
-            return '{:d} : [{}]'.format(pyval, pyval.length())
+            return '{:d} : [{}]'.format(int(pyval), pyval.length())
         else:
             # TODO: convert strings to ASCII?
             raise TypeError(
