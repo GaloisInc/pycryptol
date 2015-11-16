@@ -269,7 +269,9 @@ class _CryptolModule(object):
         self.__mono_binds = True
         self.__prover = Provers.CVC4
         self.__req = req
-        if filepath is not None:
+        if filepath is None:
+            self.__load_prelude()
+        else:
             self.__load_module(filepath)
         self.__req.send_json({'tag': 'browse'})
         browse_resp = self.__req.recv_json()
@@ -338,6 +340,17 @@ class _CryptolModule(object):
 
             # add it to the object under construction
             setattr(self.__class__, name, val)
+
+    def __load_prelude(self):
+        """Load the Prelude, leaving it up to the server to find it
+
+        :raises CryptolError: if the prelude does not load successfully
+
+        """
+        self.__req.send_json({'tag': 'loadPrelude'})
+        load_resp = self.__req.recv_json()
+        if load_resp['tag'] != 'ok':
+            raise CryptolError(load_resp)
 
     def __load_module(self, filepath):
         """Initialize this module with the file at the given path

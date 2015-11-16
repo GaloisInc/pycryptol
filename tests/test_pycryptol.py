@@ -14,6 +14,9 @@ def cry():
 def prelude(cry):
     return cry.prelude()
 
+def test_prelude(prelude):
+    prelude.eval('1+1')
+
 def test_aes(cry):
     key = BitVector(intVal=0x2b7e151628aed2a6abf7158809cf4f3c, size=128)
     tvs = [(BitVector(intVal=pt, size=128),
