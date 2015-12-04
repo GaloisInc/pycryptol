@@ -4,18 +4,24 @@
 
 from cryptol import *
 from BitVector import BitVector
+from multiprocessing import Process, Lock
+import os
 import pytest
+import signal
+import time
 
 @pytest.fixture(scope="module")
-def cry():
-    return Cryptol()
+def cry(request):
+    cry = Cryptol()
+    request.addfinalizer(cry.exit)
+    return cry
 
 @pytest.fixture(scope="module")
 def prelude(cry):
     return cry.prelude()
 
 def test_prelude(prelude):
-    prelude.eval('1+1')
+    assert int(prelude.eval('1+1')) == 0
 
 def test_aes(cry):
     key = BitVector(intVal=0x2b7e151628aed2a6abf7158809cf4f3c, size=128)
@@ -41,3 +47,20 @@ def test_oplus(cry):
     two = BitVector(intVal=2, size=4)
     three = BitVector(intVal=3, size=4)
     assert int(oplus(two)(three)) == 5
+
+def test_interrupt(cry):
+    m = cry.load_module('tests/inf.cry')
+    lock = Lock()
+    pid = os.getpid()
+    lock.acquire()
+    def interrupter():
+        lock.acquire()
+        time.sleep(.1)
+        # sends SIGINT to main thread
+        os.kill(pid, signal.SIGINT)
+    child = Process(target=interrupter)
+    child.start()
+    with pytest.raises(KeyboardInterrupt):
+        lock.release()
+        m.eval('bot ()')
+    assert int(m.eval('1+1')) == 0

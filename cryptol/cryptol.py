@@ -154,10 +154,14 @@ class Cryptol(object):
             # Start the server
             null = open(os.devnull, 'wb')
             try:
-                self.__server = subprocess.Popen([cryptol_server, str(port)],
+                args = [cryptol_server,
+                        '--port', str(port),
+                        '--mask-interrupts']
+                self.__server = subprocess.Popen(args,
                                                  stdin=subprocess.PIPE,
                                                  stdout=null,
-                                                 stderr=null)
+                                                 stderr=null,
+                                                 shell=True)
             except OSError as err:
                 if err.errno == os.errno.ENOENT:
                     raise CryptolServerError(
@@ -202,10 +206,13 @@ class Cryptol(object):
             mod = mod_ref()
             if mod is not None:
                 mod.exit()
-        if not self.__main_req.closed:
+        if not self.__main_req.closed and self.__server:
+            self.__main_req.send_json({'tag': 'exit'}, flags=zmq.NOBLOCK)
             self.__main_req.close()
-        self.__ctx.destroy()
-        if self.__server:
+        if not self.__ctx.closed:
+            self.__ctx.destroy()
+        if self.__server and self.__server.poll() is not None:
+            time.sleep(0.01)
             self.__server.terminate()
 
     def load_module(self, filepath):
@@ -218,21 +225,21 @@ class Cryptol(object):
         :param str filepath: The filepath of the Cryptol module to load
 
         """
-        req = self.__new_client()
+        port, req = self.__new_client()
         # TODO: get the module name from the AST, don't just guess
         # from the filepath
         mod_name = os.path.splitext(
             os.path.basename(filepath))[0].encode('ascii', 'replace')
         cls = type('{} <Cryptol>'.format(mod_name), (_CryptolModule,), {})
-        mod = cls(req, filepath)
+        mod = cls(port, req, self.__main_req, filepath)
         self.__loaded_modules.append(weakref.ref(mod))
         return mod
 
     def prelude(self):
         """Load the Cryptol prelude."""
-        req = self.__new_client()
+        port, req = self.__new_client()
         cls = type('Prelude <Cryptol>', (_CryptolModule,), {})
-        mod = cls(req)
+        mod = cls(port, req, self.__main_req)
         self.__loaded_modules.append(weakref.ref(mod))
         return mod
 
@@ -243,7 +250,7 @@ class Cryptol(object):
         worker_port = resp['port']
         req = self.__ctx.socket(zmq.REQ)
         req.connect(self.__addr + ':' + str(worker_port))
-        return req
+        return (worker_port, req)
 
 class _CryptolModule(object):
     """Abstract class for Cryptol modules.
@@ -262,19 +269,21 @@ class _CryptolModule(object):
     """
     __identifier = re.compile(r"^[a-zA-Z_]\w*\Z")
 
-    def __init__(self, req, filepath=None):
+    def __init__(self, port, req, control_req, filepath=None):
         self.__decls = {}
         self.__ascii = False
         self.__base = 16
         self.__mono_binds = True
         self.__prover = Provers.CVC4
+        self.__port = port
         self.__req = req
+        self.__control_req = control_req
         if filepath is None:
             self.__load_prelude()
         else:
             self.__load_module(filepath)
         self.__req.send_json({'tag': 'browse'})
-        browse_resp = self.__req.recv_json()
+        browse_resp = self.__try_recv_json()
         tl_decls = browse_resp['decls']['ifDecls']
         for decl in tl_decls:
             name = decl['ifDeclName']['nIdent'][1]
@@ -348,7 +357,7 @@ class _CryptolModule(object):
 
         """
         self.__req.send_json({'tag': 'loadPrelude'})
-        load_resp = self.__req.recv_json()
+        load_resp = self.__try_recv_json()
         if load_resp['tag'] != 'ok':
             raise CryptolError(load_resp)
 
@@ -361,7 +370,7 @@ class _CryptolModule(object):
 
         """
         self.__req.send_json({'tag': 'loadModule', 'filePath': filepath})
-        load_resp = self.__req.recv_json()
+        load_resp = self.__try_recv_json()
         if load_resp['tag'] != 'ok':
             raise CryptolError(load_resp)
 
@@ -394,7 +403,7 @@ class _CryptolModule(object):
                 )
         expr = _CryptolModule.template(expr, fmtargs)
         self.__req.send_json({'tag': tag, 'expr': expr})
-        resp = self.__req.recv_json()
+        resp = self.__try_recv_json()
         return resp
 
     def __from_value(self, val):
@@ -455,7 +464,7 @@ class _CryptolModule(object):
             self.__req.send_json({'tag': 'applyFun',
                                   'handle': handle,
                                   'arg': self.__to_value(arg)})
-            val = self.__req.recv_json()
+            val = self.__try_recv_json()
             if val['tag'] == 'value':
                 return self.__from_value(val['value'])
             elif val['tag'] == 'funValue':
@@ -703,14 +712,14 @@ class _CryptolModule(object):
         # TODO: add more examples, special-case these into methods
         # like _CryptolModule.set_base, etc
         self.__req.send_json({'tag': 'setOpt', 'key': option, 'value': value})
-        return self.__req.recv_json()
+        return self.__try_recv_json()
 
     def browse(self):
         """Browse the definitions in scope in this module."""
         # TODO: return these in a cleaner structure, perhaps combined
         # with the type information that typeof will return
         self.__req.send_json({'tag': 'browse'})
-        return self.__req.recv_json()
+        return self.__try_recv_json()
 
     def exit(self):
         """End the Cryptol session for this module.
@@ -720,9 +729,24 @@ class _CryptolModule(object):
 
         """
         if not self.__req.closed:
-            self.__req.send_json({'tag': 'exit'})
-            self.__req.recv_json()
+            try:
+                self.__req.send_json({'tag': 'exit'}, flags=zmq.NOBLOCK)
+                self.__req.recv_json(flags=zmq.NOBLOCK)
+            except zmq.error.Again:
+                pass
             self.__req.close()
+
+    def __try_recv_json(self):
+        """Try to receive from the request socket, but guard for exceptions."""
+        try:
+            return self.__req.recv_json()
+        except:
+            self.__control_req.send_json({'tag': 'interrupt',
+                                          'port': self.__port})
+            self.__control_req.recv_json()
+            self.__req.recv_json()
+            raise
+
 
     @staticmethod
     def to_expr(pyval):
