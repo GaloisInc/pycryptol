@@ -123,6 +123,66 @@ class AllSatResult(object):
             raise ValueError('No satisfying assignments for unsat property')
         return self.__argss
 
+class TestReport(object):
+    """The result of a call to :meth:`.check` or :meth:`.exhaust`"""
+
+    def __init__(self, prop, passed, tests_run, tests_possible, errmsg, cex):
+        self.__prop = prop
+        self.__passed = passed
+        self.__tests_run = tests_run
+        self.__tests_possible = tests_possible
+        self.__errmsg = errmsg
+        self.__cex = cex
+
+    def __str__(self):
+        if self.__passed:
+            return 'pass'
+        else:
+            return 'fail'
+
+    def passed(self):
+        """Did the tests pass?"""
+        return self.__passed
+
+    def is_exhaustive(self):
+        """Were the tests exhaustive?"""
+        return self.__tests_run >= self.__tests_possible
+
+    def tests_run(self):
+        """How many tests were run?"""
+        return self.__tests_run
+
+    def tests_possible(self):
+        """Given the type under test, how many tests were possible?"""
+        return self.__tests_possible
+
+    def coverage(self):
+        """The coverage percentage of these tests
+
+        :return float: float between 0.0 and 1.0
+        """
+        return float(self.__tests_run) / self.__tests_possible
+
+    def has_counterexample(self):
+        """Did testing find a counterexample?"""
+        return self.__cex is not None
+
+    def get_counterexample(self):
+        """Return the counterexample as a tuple of arguments"""
+        if self.__cex is None:
+            raise ValueError('No counterexample found for property')
+        return self.__cex
+
+    def has_error(self):
+        """Did the tests fail due to an evaluation error?"""
+        return self.__errmsg is not None
+
+    def get_error(self):
+        """Return the error message, if there was one"""
+        if self.__errmsg is None:
+            raise ValueError('No error message')
+        return self.__errmsg
+
 class Cryptol(object):
     """A Cryptol interpreter session.
 
@@ -587,15 +647,68 @@ class _CryptolModule(object):
                 u'Cryptol typechecking returned a non-type '
                 'message: {}'.format(resp))
 
-    def check(self, expr, fmtargs=()):
-        """Randomly test a Cryptol property."""
-        # TODO: return counterexample value
-        return self.__tag_expr('check', expr, fmtargs)
+    def check(self, expr, fmtargs=(), limit=100):
+        """Randomly test a Cryptol property.
 
-    def exhaust(self, expr, fmtargs=()):
-        """Exhaustively check a Cryptol property."""
-        # TODO: return counterexample value
-        return self.__tag_expr('exhaust', expr, fmtargs)
+        :param str expr: The property to test
+
+        :param fmtargs: The values to substitute in for ``?`` in
+            ``expr`` (see :meth:`.template`)
+
+        :param int limit: The number of test cases to run, or ``None``
+            to exhaustively check the property
+
+        :return: A :class:`.TestReport` for this property
+
+        :raises ValueError: if ``expr`` is empty
+
+        :raises CryptolError: if an error occurs during Cryptol
+            parsing or typechecking; errors during test evaluation are
+            reported in the :class:`.TestReport`.
+
+        """
+        if expr == '':
+            raise ValueError('Cannot check an empty expression')
+        # set keywords
+        if limit is not None:
+            self.setopt('tests', str(limit))
+            cmd = 'check'
+        else:
+            cmd = 'exhaust'
+        resp = self.__tag_expr(cmd, expr, fmtargs)
+        if resp['tag'] == 'interactiveError':
+            raise CryptolError(resp['pp'])
+        try:
+            obj = resp['testReport'][0]
+        except:
+            raise PycryptolInternalError(
+                u'Malformed check response: {}'.format(resp))
+        return self.__create_test_report(obj)
+
+    def __create_test_report(self, obj):
+        try:
+            result = obj['reportResult']
+            if 'Pass' in result:
+                passed = True
+                cex = None
+            else:
+                passed = False
+            if 'FailFalse' in result:
+                cex = tuple([self.__from_value(arg)
+                             for arg in result['FailFalse']])
+            if 'FailError' in result:
+                cex = tuple([self.__from_value(arg)
+                             for arg in result['args']])
+                errmsg = result['FailError']
+            else:
+                errmsg = None
+            tests_run = obj['reportTestsRun']
+            tests_possible = obj['reportTestsPossible']
+            prop = obj['reportProp']
+            return TestReport(
+                prop, passed, tests_run, tests_possible, errmsg, cex)
+        except KeyError:
+            raise PycryptolInternalError('Malformed check/exhaust response')
 
     def prove(self, expr, fmtargs=(), prover=Provers.CVC4):
         """Prove validity of a Cryptol property, or find a counterexample.

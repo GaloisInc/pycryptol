@@ -55,7 +55,7 @@ def test_interrupt(cry):
     lock.acquire()
     def interrupter():
         lock.acquire()
-        time.sleep(.1)
+        time.sleep(1)
         # sends SIGINT to main thread
         os.kill(pid, signal.SIGINT)
     child = Process(target=interrupter)
@@ -64,3 +64,39 @@ def test_interrupt(cry):
         lock.release()
         m.eval('bot ()')
     assert int(m.eval('1+1')) == 0
+
+def test_check(prelude):
+    report = prelude.check('\\x -> (x : [4]) == x')
+    assert(report.passed())
+    assert(report.is_exhaustive())
+
+    report = prelude.check('\\x -> (x : [8]) == x')
+    assert(report.passed())
+    assert(not report.is_exhaustive())
+    assert(report.coverage() == 0.390625)
+
+    report = prelude.check('\\x -> (x : [8]) == x', limit=256)
+    print report.tests_run()
+    print report.tests_possible()
+    assert(report.passed())
+    assert(report.is_exhaustive())
+    assert(report.coverage() == 1.0)
+
+    report = prelude.check('\\x -> (x : [8]) == x', limit=None)
+    assert(report.passed())
+    assert(report.is_exhaustive())
+    assert(report.coverage() == 1.0)
+
+    report = prelude.check('\\x -> x != 0x5')
+    assert(not report.passed())
+    assert(int(report.get_counterexample()[0]) == 5)
+
+    report = prelude.check('\\x -> x != 0xdeadbeefcafe')
+    assert(report.passed()) # probabilistic!
+    assert(not report.is_exhaustive())
+    assert(report.coverage() < 0.1)
+
+    report = prelude.check('\\x -> x + 0x4 == error \"foo\"')
+    assert(not report.passed())
+    assert(report.has_error())
+    assert('foo' in report.get_error())
