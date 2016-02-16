@@ -345,8 +345,8 @@ class _CryptolModule(object):
         self.__req.send_json({'tag': 'browse'})
         browse_resp = self.__try_recv_json()
         tl_decls = browse_resp['decls']['ifDecls']
-        for decl in tl_decls:
-            name = decl['ifDeclName']['nIdent'][1]
+        for name in tl_decls:
+            decl = tl_decls[name]
 
             # TODO: properly handle polymorphic declarations
             tvars = decl['ifDeclSig']['sVars']
