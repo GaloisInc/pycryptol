@@ -977,3 +977,9 @@ def _is_function(sch):
     except (IndexError, KeyError):
         pass
     return ans
+
+def _bv_to_hex(bv):
+    """Temporary convenience function for C API"""
+    if not isinstance(bv, BitVector):
+        raise TypeError('bv_to_hex expects a BitVector')
+    return hex(long(int(bv)))
