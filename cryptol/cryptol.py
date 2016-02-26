@@ -124,7 +124,7 @@ class AllSatResult(object):
         return self.__argss
 
 class TestReport(object):
-    """The result of a call to :meth:`.check` or :meth:`.exhaust`"""
+    """The result of a call to :meth:`.check`"""
 
     def __init__(self, prop, passed, tests_run, tests_possible, errmsg, cex):
         self.__prop = prop

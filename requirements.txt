@@ -2,5 +2,5 @@
 --allow-external BitVector
 
 BitVector==3.4.4
-pyzmq==14.7.0
+pyzmq==15.2.0
 enum34==1.0.4
