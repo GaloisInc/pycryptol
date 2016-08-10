@@ -495,8 +495,8 @@ class _CryptolModule(object):
         # VWord
         if 'word' in val:
             bv = val['word']['bitvector']
-            intval = bv['value']
-            width = bv['width']
+            intval = int(bv['value'])
+            width = int(bv['width'])
             if width == 0:
                 return None
             else:
